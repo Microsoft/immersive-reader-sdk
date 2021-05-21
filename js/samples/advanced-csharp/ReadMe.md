@@ -12,7 +12,7 @@ This sample also demonstrates how to use a canary to improve security in your we
 
 ## Usage
 
-Microsoft 1st Party Office applications should use the `v0.5.7` Immersive Reader JavaScript SDK, this SDK's authentication token is retrieved by providing a `SubscriptionKey` and `Region`. This will ensure the Immersive Reader uses Office compliant APIs deployed to OSI.
+Microsoft 1st Party Office applications should use the `v0.5.8` Immersive Reader JavaScript SDK, this SDK's authentication token is retrieved by providing a `SubscriptionKey` and `Region`. This will ensure the Immersive Reader uses Office compliant APIs deployed to OSI.
 
 Here are the steps:
 

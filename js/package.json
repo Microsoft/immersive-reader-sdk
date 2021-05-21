@@ -6,7 +6,7 @@
   "main": "lib/immersive-reader-sdk.js",
   "types": "lib/immersive-reader-sdk.d.ts",
   "devDependencies": {
-    "@types/jest": "^24.0.11",
+    "@types/jest": "^24.9.1",
     "@types/node": "^12.12.14",
     "jest": "^26.0.0",
     "replace-in-file": "^3.4.4",

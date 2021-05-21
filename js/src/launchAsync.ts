@@ -2,11 +2,10 @@
 // Licensed under the MIT License.
 
 import { Content } from './content';
-import { CookiePolicy, DisplayOptions, Options, ReadAloudOptions, TranslationOptions } from './options';
+import { CookiePolicy, DisplayOptions, InternalOptionDictionary, Options, ReadAloudOptions, StyleOverrideOptions, TranslationOptions } from './options';
 import { Error, ErrorCode } from './error';
 import { LaunchResponse } from './launchResponse';
 declare const VERSION: string;
-
 
 /* -------------------------------------------------------------------------- */
 /*                                   Shared                                   */
@@ -26,6 +25,7 @@ type Message = {
     displayOptions?: DisplayOptions;
     sendPreferences?: boolean;
     preferences?: string;
+    internalOptions?: InternalOptionDictionary;
 };
 
 // TODO Future: This can be split between the 2 functions since there is no overlap at the moment
@@ -59,7 +59,6 @@ let messageHandler: (e: any) => void = null;
 
 enum FuncType { launchAsync, launchWithoutContentAsync }
 /* ------------------------------- End Shared ------------------------------- */
-
 
 /* -------------------------------------------------------------------------- */
 /*                               S2S (Internal)                               */
@@ -99,20 +98,21 @@ let launchResponseError: Error;
 /* -------------------------------------------------------------------------- */
 function _getAndSetOptionDefaults(options?: Options): Options {
 
-    const { allowFullscreen, cookiePolicy, hideExitButton, onExit, parent, timeout, uiZIndex, useWebview } = options || {};
+    const { allowFullscreen, cookiePolicy, hideExitButton, internalOptions, onExit, parent, timeout, uiZIndex, useWebview } = options || {};
 
     const _options = {
         ...options,
         allowFullscreen: allowFullscreen || true,
         cookiePolicy: cookiePolicy ?? CookiePolicy.Disable, // Disabled by default. Customers must explicitly enable
         hideExitButton: hideExitButton || false,
+        internalOptions: internalOptions ?? {},
         onExit,
         timeout: timeout ?? 15000,  // Default to 15 seconds
         uiZIndex: (!uiZIndex || typeof options.uiZIndex !== 'number') ? 1000 : uiZIndex, // Default to 1000 if not valid
         useWebview: useWebview || false
     };
 
-    _createIFrame(parent, useWebview, allowFullscreen);
+    _createIFrame(parent, useWebview, allowFullscreen, internalOptions?.styleOverrides);
 
     return _options;
 }
@@ -142,7 +142,8 @@ function _createMessageHandler(options: Options, funcType: FuncType, extras: Uni
                         translationOptions: options.translationOptions,
                         displayOptions: options.displayOptions,
                         sendPreferences: !!options.onPreferencesChanged,
-                        preferences: options.preferences
+                        preferences: options.preferences,
+                        internalOptions: options.internalOptions?.messageOptions
                     };
                     iframe.contentWindow!.postMessage(JSON.stringify({ messageType: 'Content', messageValue: message }), '*');
                     break;
@@ -218,6 +219,7 @@ function _createMessageHandler(options: Options, funcType: FuncType, extras: Uni
                         exit(options.onExit);
                         reject(error);
                     }
+                    break;
                 }
                 case FuncType.launchWithoutContentAsync: {
                     if (launchResponse) {
@@ -269,10 +271,15 @@ function _makeSrcUrl(options: Options, funcType: FuncType): string {
         src += `&omkt=${options.uiLang}`;
     }
 
+    const queryParameters: InternalOptionDictionary = options?.internalOptions?.queryParameters;
+    for (const parameterName in queryParameters) {
+        src += '&' + parameterName + '=' + queryParameters[parameterName];
+    }
+
     return src;
 }
 
-function _createIFrame(_parent: Node, useWebview: boolean, allowFullscreen: boolean): void {
+function _createIFrame(_parent: Node, useWebview: boolean, allowFullscreen: boolean, styleOverrides: StyleOverrideOptions): void {
     parent = _parent || document.body;
     iframeContainer = document.createElement('div');
     iframe = useWebview ? <HTMLIFrameElement>document.createElement('webview') : document.createElement('iframe');
@@ -288,15 +295,34 @@ function _createIFrame(_parent: Node, useWebview: boolean, allowFullscreen: bool
             iframe.contentWindow.postMessage(JSON.stringify({ messageType: 'WebviewHost' }), '*');
         });
     }
-    iframe.style.cssText = _parent ? 'position: static; width: 100%; height: 100%; left: 0; top: 0; border-width: 0' : 'position: static; width: 100vw; height: 100vh; left: 0; top: 0; border-width: 0';
+
+    const { iframeStyleOverrides } = styleOverrides || {};
+    if (iframeStyleOverrides && iframeStyleOverrides !== '') {
+        iframe.style.cssText = iframeStyleOverrides;
+    } else {
+        iframe.style.cssText = _parent
+        ? 'position: static; width: 100%; height: 100%; left: 0; top: 0; border-width: 0;'
+        : 'position: static; width: 100vw; height: 100vh; left: 0; top: 0; border-width: 0;';
+    }
+
     noscroll = document.createElement('style');
     noscroll.innerHTML = 'body{height:100%;overflow:hidden;}';
 }
 
-function _setIframeProps(src: string, optionParent: Node, uiZIndex: number): void {
+function _setIframeProps(src: string, options: Options): void {
+
+    const { internalOptions, parent: optionParent, uiZIndex } = options || {};
+    const { styleOverrides } = internalOptions || {};
+
     iframe.src = src;
 
-    iframeContainer.style.cssText = optionParent ? `position: relative; width: 100%; height: 100%; border-width: 0; -webkit-perspective: 1px; z-index: ${uiZIndex}; background: white; overflow: hidden` : `position: fixed; width: 100vw; height: 100vh; left: 0; top: 0; border-width: 0; -webkit-perspective: 1px; z-index: ${uiZIndex}; background: white; overflow: hidden`;
+    if (!!styleOverrides?.iframeContainerStyleOverrides) {
+        iframeContainer.style.cssText = styleOverrides?.iframeContainerStyleOverrides;
+    } else {
+        iframeContainer.style.cssText = optionParent
+            ? `position: relative; width: 100%; height: 100%; border-width: 0; -webkit-perspective: 1px; z-index: ${uiZIndex}; background: white; overflow: hidden`
+            : `position: fixed; width: 100vw; height: 100vh; left: 0; top: 0; border-width: 0; -webkit-perspective: 1px; z-index: ${uiZIndex}; background: white; overflow: hidden`;
+    }
 
     iframeContainer.appendChild(iframe);
     parent.appendChild(iframeContainer);
@@ -406,8 +432,7 @@ export function launchAsync(token: string, subdomain: string, content: Content, 
         const domain = options.customDomain ? options.customDomain : 'https://learningtools.onenote.com/learningtoolsapp/cognitive/';
         const src = domain + _makeSrcUrl(options, FuncType.launchAsync);
 
-        _setIframeProps(src, options.parent, options.uiZIndex);
-
+        _setIframeProps(src, options);
     });
 }
 
@@ -471,7 +496,7 @@ export function launchWithoutContentAsync(options?: Options): Promise<LaunchWith
 
     const src = _makeSrcUrl(options, FuncType.launchWithoutContentAsync);
 
-    _setIframeProps(src, options.parent, options.uiZIndex);
+    _setIframeProps(src, options);
 
     const launchWithoutContentResponse: LaunchWithoutContentResponse = {
         cancelAndCloseReader: () => exit(options.onExit),
