@@ -1,6 +1,6 @@
 {
   "name": "@microsoft/immersive-reader-sdk",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "homepage": "https://github.com/Microsoft/immersive-reader-sdk",
   "license": "MIT",
   "main": "lib/immersive-reader-sdk.js",
